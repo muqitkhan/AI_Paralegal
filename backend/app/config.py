@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "your-super-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_MINUTES: int = 60 * 24 * 7  # 7 days
+    COOKIE_SECURE: bool = False
 
     # Groq AI (free tier - OpenAI-compatible API)
     GROQ_API_KEY: str = ""
@@ -22,6 +23,10 @@ class Settings(BaseSettings):
 
     # Frontend
     FRONTEND_URL: str = "http://localhost:3000"
+    FRONTEND_URL_HTTPS: str = "https://localhost:3000"
+
+    # Local HTTPS toggle
+    ENABLE_LOCAL_HTTPS: bool = False
 
     class Config:
         env_file = ".env"

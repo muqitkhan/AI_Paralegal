@@ -30,6 +30,33 @@ Frontend (Next.js 14)  →  Backend (FastAPI)  →  PostgreSQL
 
 ## Running the Project Locally
 
+### One Command (Recommended)
+
+From project root:
+
+```bash
+./start.sh
+```
+
+`start.sh` now handles end-to-end bootstrapping:
+- starts PostgreSQL container
+- creates `backend/.env` from `.env.example` if missing
+- auto-generates a strong `JWT_SECRET_KEY` if placeholder/empty
+- installs missing dependencies (`backend/venv`, `frontend/node_modules`)
+- runs migrations (when available)
+- optionally seeds demo data (`SEED_DEMO_DATA=true` by default)
+- starts backend and frontend
+
+Optional toggles:
+
+```bash
+# Enable local HTTPS mode
+ENABLE_LOCAL_HTTPS=true ./start.sh
+
+# Skip demo seed data
+SEED_DEMO_DATA=false ./start.sh
+```
+
 ### Prerequisites
 
 | Tool | Version | Notes |
@@ -97,6 +124,7 @@ DATABASE_URL=postgresql+psycopg://paralegal:paralegal_secret@localhost:5432/ai_p
 
 # JWT - CHANGE THIS IN PRODUCTION
 JWT_SECRET_KEY=change-me-to-a-secure-random-string
+COOKIE_SECURE=False
 
 # Groq AI (FREE - get key from https://console.groq.com/keys)
 GROQ_API_KEY=your-groq-api-key-here
@@ -104,10 +132,25 @@ AI_MODEL=llama-3.3-70b-versatile
 
 # Frontend URL
 FRONTEND_URL=http://localhost:3000
+FRONTEND_URL_HTTPS=https://localhost:3000
+
+# Local HTTPS toggle (set True if using local certs)
+ENABLE_LOCAL_HTTPS=False
 EOF
 ```
 
 > **Important:** Replace `your-groq-api-key-here` with your actual Groq API key.
+
+### Secret Rotation (Recommended)
+
+Generate strong secrets:
+
+```bash
+cd backend
+python scripts/generate_secrets.py
+```
+
+Copy the generated values into your `backend/.env` (at minimum `JWT_SECRET_KEY`).
 
 #### Start the Backend Server
 
@@ -137,6 +180,16 @@ npm install
 # Start dev server
 npm run dev
 ```
+
+### Optional: Run with Local HTTPS
+
+Local certificates are available in `frontend/certificates/`.
+
+```bash
+ENABLE_LOCAL_HTTPS=true ./start.sh
+```
+
+This runs frontend/backend on HTTPS localhost and uses secure cookie mode when `COOKIE_SECURE=True`.
 
 ### Step 5: Open the App
 

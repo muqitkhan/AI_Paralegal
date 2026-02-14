@@ -21,7 +21,7 @@ def set_auth_cookie(response: Response, token: str):
         key="auth_token",
         value=token,
         httponly=True,
-        secure=not settings.DEBUG,
+        secure=settings.COOKIE_SECURE,
         samesite="lax",
         max_age=settings.JWT_EXPIRATION_MINUTES * 60,
         path="/",
