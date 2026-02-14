@@ -70,5 +70,5 @@ class DocumentAnalysisResponse(BaseModel):
 class DocumentDraftRequest(BaseModel):
     doc_type: str
     template_id: str | None = None
-    context: str  # Natural language description
+    context: str = ""  # Optional: natural language description / instructions
     variables: dict | None = None  # Template variable values

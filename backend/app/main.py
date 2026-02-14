@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import engine, Base
-from app.routers import auth, clients, cases, documents, billing, calendar, ai
+from app.routers import auth, clients, cases, documents, billing, calendar, ai, dashboard
 
 settings = get_settings()
 
@@ -12,6 +12,7 @@ app = FastAPI(
     version=settings.APP_VERSION,
     docs_url="/api/docs",
     redoc_url="/api/redoc",
+    redirect_slashes=False,
 )
 
 # CORS
@@ -31,6 +32,7 @@ app.include_router(documents.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
 app.include_router(calendar.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
+app.include_router(dashboard.router, prefix="/api")
 
 
 @app.on_event("startup")

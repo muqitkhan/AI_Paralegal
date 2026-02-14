@@ -2,8 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
-import { Calendar as CalIcon, Plus, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Calendar as CalIcon, Plus, AlertTriangle, CheckCircle2, Briefcase, Clock, Trash2, Zap, Sparkles, Loader2, Filter, ChevronDown, ChevronUp } from "lucide-react";
 import toast from "react-hot-toast";
+import InlineAutocomplete from "@/components/InlineAutocomplete";
+import AddressAutocomplete from "@/components/AddressAutocomplete";
+import FileImport from "@/components/FileImport";
 
 const eventTypes = ["hearing", "meeting", "deposition", "filing", "consultation", "other"];
 const priorities = ["low", "medium", "high", "critical"];
@@ -11,10 +14,17 @@ const priorities = ["low", "medium", "high", "critical"];
 export default function CalendarPage() {
   const [events, setEvents] = useState<any[]>([]);
   const [deadlines, setDeadlines] = useState<any[]>([]);
+  const [cases, setCases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"events" | "deadlines">("deadlines");
   const [showEventForm, setShowEventForm] = useState(false);
   const [showDeadlineForm, setShowDeadlineForm] = useState(false);
+  const [filterCase, setFilterCase] = useState("");
+  const [filterPriority, setFilterPriority] = useState("");
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [autoCaseId, setAutoCaseId] = useState("");
+  const [autoFilling, setAutoFilling] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
 
   const [eventForm, setEventForm] = useState({
     title: "",
@@ -31,15 +41,19 @@ export default function CalendarPage() {
     due_date: "",
     priority: "medium",
     reminder_days: 3,
+    case_id: "",
   });
 
   useEffect(() => { loadData(); }, []);
 
   async function loadData() {
     try {
-      const [ev, dl] = await Promise.all([api.getEvents(), api.getDeadlines()]);
-      setEvents(ev);
-      setDeadlines(dl);
+      const [ev, dl, cs] = await Promise.all([
+        api.getEvents().catch(() => []),
+        api.getDeadlines().catch(() => []),
+        api.getCases().catch(() => []),
+      ]);
+      setEvents(ev); setDeadlines(dl); setCases(cs);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }
@@ -54,29 +68,109 @@ export default function CalendarPage() {
       });
       toast.success("Event created");
       setShowEventForm(false);
+      setEventForm({ title: "", event_type: "meeting", description: "", location: "", start_time: "", end_time: "" });
       loadData();
     } catch (err: any) { toast.error(err.message); }
+  }
+
+  async function handleEventAutoFill() {
+    setAutoFilling(true);
+    try {
+      const result = await api.aiAutoFill("event", ["title", "event_type", "description", "location", "start_time", "end_time"], eventForm);
+      setEventForm(prev => ({
+        ...prev,
+        title: result.title || prev.title,
+        event_type: result.event_type || prev.event_type,
+        description: result.description || prev.description,
+        location: result.location || prev.location,
+        start_time: result.start_time ? result.start_time.slice(0, 16) : prev.start_time,
+        end_time: result.end_time ? result.end_time.slice(0, 16) : prev.end_time,
+      }));
+      toast.success("Event auto-filled by AI");
+    } catch (err: any) { toast.error(err.message || "Auto-fill failed"); }
+    finally { setAutoFilling(false); }
   }
 
   async function handleCreateDeadline(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await api.createDeadline({
-        ...deadlineForm,
-        due_date: new Date(deadlineForm.due_date).toISOString(),
-      });
+      const payload: any = { ...deadlineForm, due_date: new Date(deadlineForm.due_date).toISOString() };
+      if (!payload.case_id) delete payload.case_id;
+      await api.createDeadline(payload);
       toast.success("Deadline created");
       setShowDeadlineForm(false);
-      setDeadlineForm({ title: "", description: "", due_date: "", priority: "medium", reminder_days: 3 });
+      setDeadlineForm({ title: "", description: "", due_date: "", priority: "medium", reminder_days: 3, case_id: "" });
       loadData();
     } catch (err: any) { toast.error(err.message); }
   }
 
-  async function toggleDeadline(id: string, completed: boolean) {
+  async function handleDeadlineAutoFill() {
+    setAutoFilling(true);
     try {
-      await api.updateDeadline(id, { is_completed: !completed });
+      const caseName = deadlineForm.case_id ? cases.find(c => c.id === deadlineForm.case_id)?.title : "";
+      const ctx = caseName ? `Case: ${caseName}` : "";
+      const result = await api.aiAutoFill("deadline", ["title", "description", "due_date", "priority", "reminder_days"], deadlineForm, ctx);
+      setDeadlineForm(prev => ({
+        ...prev,
+        title: result.title || prev.title,
+        description: result.description || prev.description,
+        due_date: result.due_date ? result.due_date.slice(0, 16) : prev.due_date,
+        priority: result.priority || prev.priority,
+        reminder_days: typeof result.reminder_days === "number" ? result.reminder_days : prev.reminder_days,
+      }));
+      toast.success("Deadline auto-filled by AI");
+    } catch (err: any) { toast.error(err.message || "Auto-fill failed"); }
+    finally { setAutoFilling(false); }
+  }
+
+  async function toggleDeadline(id: string, completed: boolean) {
+    try { await api.updateDeadline(id, { is_completed: !completed }); loadData(); } catch (err: any) { toast.error(err.message); }
+  }
+
+  async function deleteDeadline(id: string) {
+    if (!confirm("Delete this deadline?")) return;
+    try { await api.deleteDeadline(id); toast.success("Deleted"); loadData(); } catch (err: any) { toast.error(err.message); }
+  }
+
+  async function deleteEvent(id: string) {
+    if (!confirm("Delete this event?")) return;
+    try { await api.deleteEvent(id); toast.success("Deleted"); loadData(); } catch (err: any) { toast.error(err.message); }
+  }
+
+  async function autoCreateDeadlines(caseId: string) {
+    const c = cases.find(cs => cs.id === caseId);
+    if (!c) return;
+    const templates = [
+      { title: `${c.title} — Discovery Deadline`, priority: "high", days: 30 },
+      { title: `${c.title} — Motion Filing Deadline`, priority: "high", days: 60 },
+      { title: `${c.title} — Pre-Trial Conference`, priority: "critical", days: 90 },
+      { title: `${c.title} — Trial Prep Deadline`, priority: "medium", days: 14 },
+    ];
+    try {
+      for (const t of templates) {
+        const due = new Date();
+        due.setDate(due.getDate() + t.days);
+        await api.createDeadline({
+          title: t.title,
+          description: `Auto-generated deadline for case: ${c.title}`,
+          due_date: due.toISOString(),
+          priority: t.priority,
+          reminder_days: 3,
+          case_id: caseId,
+        });
+      }
+      toast.success(`4 deadlines created for ${c.title}`);
       loadData();
     } catch (err: any) { toast.error(err.message); }
+  }
+
+  function handleStartTimeChange(val: string) {
+    setEventForm(prev => {
+      const end = new Date(val);
+      end.setHours(end.getHours() + 1);
+      const endStr = end.toISOString().slice(0, 16);
+      return { ...prev, start_time: val, end_time: prev.end_time || endStr };
+    });
   }
 
   const priorityColors: Record<string, string> = {
@@ -86,28 +180,69 @@ export default function CalendarPage() {
     critical: "bg-red-100 text-red-700",
   };
 
+  const getCaseName = (caseId: string) => cases.find(c => c.id === caseId)?.title || "";
+
+  const now = new Date();
+  const isOverdue = (d: any) => !d.is_completed && new Date(d.due_date) < now;
+  const isToday = (d: any) => new Date(d.due_date).toDateString() === now.toDateString();
+
+  let filteredDeadlines = deadlines;
+  if (filterCase) filteredDeadlines = filteredDeadlines.filter(d => d.case_id === filterCase);
+  if (filterPriority) filteredDeadlines = filteredDeadlines.filter(d => d.priority === filterPriority);
+  if (!showCompleted) filteredDeadlines = filteredDeadlines.filter(d => !d.is_completed);
+
+  const overdueDeadlines = filteredDeadlines.filter(isOverdue);
+  const todayDeadlines = filteredDeadlines.filter(d => !d.is_completed && isToday(d) && !isOverdue(d));
+  const upcomingDeadlines = filteredDeadlines.filter(d => !d.is_completed && !isOverdue(d) && !isToday(d));
+  const completedDeadlines = filteredDeadlines.filter(d => d.is_completed);
+
+  const overdueCount = deadlines.filter(d => !d.is_completed && new Date(d.due_date) < now).length;
+  const todayCount = deadlines.filter(d => !d.is_completed && isToday(d)).length;
+  const activeCount = deadlines.filter(d => !d.is_completed).length;
+
   return (
-    <div className="animate-fade-in">
-      <div className="flex items-center justify-between mb-6">
+    <div className="animate-fade-in space-y-6">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Calendar & Deadlines</h1>
           <p className="text-slate-500 mt-1">Track court dates, filings, and important deadlines</p>
         </div>
+        <FileImport
+          onImport={(data) => api.importCalendar(data, activeTab === "events" ? "events" : "deadlines").then((r) => { loadData(); return r; })}
+          sampleFields={activeTab === "events" ? ["title", "event_type", "start_time", "end_time", "location"] : ["title", "due_date", "priority", "case_id", "description"]}
+          entityName={activeTab === "events" ? "event" : "deadline"}
+        />
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-5">
+        <div className="panel">
+          <p className="text-sm text-slate-500">Active Deadlines</p>
+          <p className="text-2xl font-bold text-slate-800">{activeCount}</p>
+        </div>
+        <div className={`panel ${overdueCount > 0 ? "border-red-200" : "border-slate-200"}`}>
+          <p className={`text-sm ${overdueCount > 0 ? "text-red-600" : "text-slate-500"}`}>Overdue</p>
+          <p className={`text-2xl font-bold ${overdueCount > 0 ? "text-red-600" : "text-slate-400"}`}>{overdueCount}</p>
+        </div>
+        <div className={`panel ${todayCount > 0 ? "border-amber-200" : "border-slate-200"}`}>
+          <p className={`text-sm ${todayCount > 0 ? "text-amber-600" : "text-slate-500"}`}>Due Today</p>
+          <p className={`text-2xl font-bold ${todayCount > 0 ? "text-amber-600" : "text-slate-400"}`}>{todayCount}</p>
+        </div>
+        <div className="panel">
+          <p className="text-sm text-slate-500">Events</p>
+          <p className="text-2xl font-bold text-blue-600">{events.length}</p>
+        </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit mb-6">
-        <button
-          onClick={() => setActiveTab("deadlines")}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === "deadlines" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}
-        >
+      <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit">
+        <button onClick={() => setActiveTab("deadlines")}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === "deadlines" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}>
           <AlertTriangle className="h-4 w-4 inline mr-1.5" />
-          Deadlines
+          Deadlines {overdueCount > 0 && <span className="ml-1 px-1.5 py-0.5 text-xs bg-red-500 text-white rounded-full">{overdueCount}</span>}
         </button>
-        <button
-          onClick={() => setActiveTab("events")}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === "events" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}
-        >
+        <button onClick={() => setActiveTab("events")}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === "events" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}>
           <CalIcon className="h-4 w-4 inline mr-1.5" />
           Events
         </button>
@@ -115,106 +250,194 @@ export default function CalendarPage() {
 
       {activeTab === "deadlines" && (
         <>
-          <div className="flex justify-end mb-4">
+          {/* Clean action bar */}
+          <div className="flex justify-between items-center mb-4">
             <button
-              onClick={() => setShowDeadlineForm(!showDeadlineForm)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
+              onClick={() => setShowFilters(!showFilters)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors border ${
+                showFilters || filterCase || filterPriority || showCompleted
+                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+              }`}
             >
-              <Plus className="h-4 w-4" />
-              New Deadline
+              <Filter className="h-3.5 w-3.5" />
+              Filters
+              {(filterCase || filterPriority || showCompleted) && (
+                <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-blue-600 text-white rounded-full">
+                  {[filterCase, filterPriority, showCompleted].filter(Boolean).length}
+                </span>
+              )}
+              {showFilters ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            </button>
+            <button onClick={() => setShowDeadlineForm(!showDeadlineForm)}
+              className="btn-base btn-sm btn-primary">
+              <Plus className="h-4 w-4" /> New Deadline
             </button>
           </div>
 
+          {/* Collapsible filters */}
+          {showFilters && (
+            <div className="panel-soft p-4 mb-4 flex flex-wrap gap-3 items-center">
+              <select value={filterCase} onChange={(e) => setFilterCase(e.target.value)}
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                <option value="">All Cases</option>
+                {cases.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+              </select>
+              <select value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)}
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                <option value="">All Priorities</option>
+                {priorities.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+                <input type="checkbox" checked={showCompleted} onChange={() => setShowCompleted(!showCompleted)} className="rounded" />
+                Show completed
+              </label>
+              {(filterCase || filterPriority || showCompleted) && (
+                <button
+                  onClick={() => { setFilterCase(""); setFilterPriority(""); setShowCompleted(false); }}
+                  className="ml-auto text-xs text-red-500 hover:text-red-600 font-medium"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+          )}
+
           {showDeadlineForm && (
-            <div className="bg-white rounded-xl border border-slate-200 p-6 mb-6">
-              <h3 className="text-lg font-semibold text-slate-800 mb-4">New Deadline</h3>
+            <div className="panel p-6 mb-6">
+              <h3 className="text-lg font-semibold text-slate-800 mb-4">
+                New Deadline
+              </h3>
               <form onSubmit={handleCreateDeadline} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Title *</label>
-                  <input
-                    required
-                    value={deadlineForm.title}
-                    onChange={(e) => setDeadlineForm({ ...deadlineForm, title: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
+                  <InlineAutocomplete required value={deadlineForm.title} onChange={(v) => setDeadlineForm({ ...deadlineForm, title: v })} fieldType="deadline_title"
+                    placeholder="e.g. Discovery Deadline"
+                    className="field" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Related Case</label>
+                  <select value={deadlineForm.case_id} onChange={(e) => setDeadlineForm({ ...deadlineForm, case_id: e.target.value })}
+                    className="field">
+                    <option value="">No case</option>
+                    {cases.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Due Date *</label>
-                  <input
-                    required
-                    type="datetime-local"
-                    value={deadlineForm.due_date}
+                  <input required type="datetime-local" value={deadlineForm.due_date}
                     onChange={(e) => setDeadlineForm({ ...deadlineForm, due_date: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
+                    className="field" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
-                  <select
-                    value={deadlineForm.priority}
-                    onChange={(e) => setDeadlineForm({ ...deadlineForm, priority: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  >
+                  <select value={deadlineForm.priority} onChange={(e) => setDeadlineForm({ ...deadlineForm, priority: e.target.value })}
+                    className="field">
                     {priorities.map((p) => <option key={p} value={p}>{p}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Remind (days before)</label>
-                  <input
-                    type="number"
-                    value={deadlineForm.reminder_days}
+                  <input type="number" value={deadlineForm.reminder_days}
                     onChange={(e) => setDeadlineForm({ ...deadlineForm, reminder_days: parseInt(e.target.value) })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
+                    className="field" />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-                  <textarea
-                    value={deadlineForm.description}
-                    onChange={(e) => setDeadlineForm({ ...deadlineForm, description: e.target.value })}
-                    rows={2}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
+                  <label className="flex items-center justify-between text-sm font-medium text-slate-700 mb-1">
+                    Description
+                    <button type="button" onClick={handleDeadlineAutoFill} disabled={autoFilling}
+                      className="flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded text-[11px] font-medium hover:bg-emerald-100 disabled:opacity-50 border border-emerald-200 transition-colors">
+                      {autoFilling ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                      AI Auto-Fill All
+                    </button>
+                  </label>
+                  <InlineAutocomplete as="textarea" value={deadlineForm.description} onChange={(v) => setDeadlineForm({ ...deadlineForm, description: v })} fieldType="description"
+                    context="legal filing deadline description" rows={2}
+                    placeholder="Describe this deadline..."
+                    className="field" />
                 </div>
                 <div className="md:col-span-2 flex gap-3">
-                  <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">Create</button>
-                  <button type="button" onClick={() => setShowDeadlineForm(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50">Cancel</button>
+                  <button type="submit" className="btn-base btn-sm btn-primary">Create</button>
+                  <button type="button" onClick={() => setShowDeadlineForm(false)} className="btn-base btn-sm btn-secondary">Cancel</button>
                 </div>
               </form>
+              {/* Auto Deadlines section - inside the form card */}
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <div className="flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-amber-500" />
+                  <span className="text-sm font-medium text-slate-700">Quick: Auto-generate deadlines for a case</span>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <select value={autoCaseId} onChange={(e) => setAutoCaseId(e.target.value)}
+                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    <option value="">Select a case...</option>
+                    {cases.filter(c => c.status !== "closed" && c.status !== "archived").map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => { if (autoCaseId) autoCreateDeadlines(autoCaseId); else toast.error("Select a case first"); }}
+                    className="btn-base btn-sm btn-amber whitespace-nowrap">
+                    <Zap className="h-3.5 w-3.5" /> Generate 4 Deadlines
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1.5">Creates Discovery, Motion Filing, Pre-Trial Conference &amp; Trial Prep deadlines</p>
+              </div>
             </div>
           )}
 
-          {deadlines.length === 0 ? (
-            <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
-              <AlertTriangle className="h-12 w-12 mx-auto text-slate-300 mb-3" />
-              <h3 className="text-lg font-medium text-slate-600">No deadlines yet</h3>
+          {/* Grouped deadline sections */}
+          {overdueDeadlines.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-red-600 mb-2 flex items-center gap-1.5">
+                <AlertTriangle className="h-4 w-4" /> Overdue ({overdueDeadlines.length})
+              </h3>
+              <div className="grid gap-2">
+                {overdueDeadlines.map(dl => (
+                  <DeadlineCard key={dl.id} dl={dl} getCaseName={getCaseName} priorityColors={priorityColors} toggleDeadline={toggleDeadline} deleteDeadline={deleteDeadline} isOverdue />
+                ))}
+              </div>
             </div>
-          ) : (
-            <div className="grid gap-3">
-              {deadlines.map((dl) => (
-                <div key={dl.id} className={`bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-4 ${dl.is_completed ? "opacity-60" : ""}`}>
-                  <button onClick={() => toggleDeadline(dl.id, dl.is_completed)}>
-                    <CheckCircle2 className={`h-6 w-6 ${dl.is_completed ? "text-emerald-500" : "text-slate-300"}`} />
-                  </button>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className={`font-medium ${dl.is_completed ? "line-through text-slate-400" : "text-slate-800"}`}>{dl.title}</h3>
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${priorityColors[dl.priority]}`}>
-                        {dl.priority}
-                      </span>
-                    </div>
-                    {dl.description && <p className="text-sm text-slate-500 mt-1">{dl.description}</p>}
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium text-slate-700">
-                      {new Date(dl.due_date).toLocaleDateString()}
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      {new Date(dl.due_date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    </p>
-                  </div>
-                </div>
-              ))}
+          )}
+
+          {todayDeadlines.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-amber-600 mb-2 flex items-center gap-1.5">
+                <Clock className="h-4 w-4" /> Due Today ({todayDeadlines.length})
+              </h3>
+              <div className="grid gap-2">
+                {todayDeadlines.map(dl => (
+                  <DeadlineCard key={dl.id} dl={dl} getCaseName={getCaseName} priorityColors={priorityColors} toggleDeadline={toggleDeadline} deleteDeadline={deleteDeadline} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {upcomingDeadlines.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-slate-600 mb-2">Upcoming ({upcomingDeadlines.length})</h3>
+              <div className="grid gap-2">
+                {upcomingDeadlines.map(dl => (
+                  <DeadlineCard key={dl.id} dl={dl} getCaseName={getCaseName} priorityColors={priorityColors} toggleDeadline={toggleDeadline} deleteDeadline={deleteDeadline} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {showCompleted && completedDeadlines.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-emerald-600 mb-2">Completed ({completedDeadlines.length})</h3>
+              <div className="grid gap-2">
+                {completedDeadlines.map(dl => (
+                  <DeadlineCard key={dl.id} dl={dl} getCaseName={getCaseName} priorityColors={priorityColors} toggleDeadline={toggleDeadline} deleteDeadline={deleteDeadline} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {filteredDeadlines.length === 0 && (
+            <div className="panel text-center py-16">
+              <AlertTriangle className="h-12 w-12 mx-auto text-slate-300 mb-3" />
+              <h3 className="text-lg font-medium text-slate-600">No deadlines found</h3>
             </div>
           )}
         </>
@@ -223,101 +446,98 @@ export default function CalendarPage() {
       {activeTab === "events" && (
         <>
           <div className="flex justify-end mb-4">
-            <button
-              onClick={() => setShowEventForm(!showEventForm)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
-            >
-              <Plus className="h-4 w-4" />
-              New Event
+            <button onClick={() => setShowEventForm(!showEventForm)}
+              className="btn-base btn-md btn-primary">
+              <Plus className="h-4 w-4" /> New Event
             </button>
           </div>
 
           {showEventForm && (
-            <div className="bg-white rounded-xl border border-slate-200 p-6 mb-6">
-              <h3 className="text-lg font-semibold text-slate-800 mb-4">New Event</h3>
+            <div className="panel p-6 mb-6">
+              <h3 className="text-lg font-semibold text-slate-800 mb-4">
+                New Event
+              </h3>
               <form onSubmit={handleCreateEvent} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Title *</label>
-                  <input
-                    required
-                    value={eventForm.title}
-                    onChange={(e) => setEventForm({ ...eventForm, title: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
+                  <InlineAutocomplete required value={eventForm.title} onChange={(v) => setEventForm({ ...eventForm, title: v })} fieldType="event_title"
+                    placeholder="e.g. Client Meeting"
+                    className="field" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
-                  <select
-                    value={eventForm.event_type}
-                    onChange={(e) => setEventForm({ ...eventForm, event_type: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  >
+                  <select value={eventForm.event_type} onChange={(e) => setEventForm({ ...eventForm, event_type: e.target.value })}
+                    className="field">
                     {eventTypes.map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Start *</label>
-                  <input
-                    required
-                    type="datetime-local"
-                    value={eventForm.start_time}
-                    onChange={(e) => setEventForm({ ...eventForm, start_time: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
+                  <input required type="datetime-local" value={eventForm.start_time}
+                    onChange={(e) => handleStartTimeChange(e.target.value)}
+                    className="field" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">End *</label>
-                  <input
-                    required
-                    type="datetime-local"
-                    value={eventForm.end_time}
+                  <input required type="datetime-local" value={eventForm.end_time}
                     onChange={(e) => setEventForm({ ...eventForm, end_time: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
+                    className="field" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Location</label>
-                  <input
-                    value={eventForm.location}
-                    onChange={(e) => setEventForm({ ...eventForm, location: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
+                  <AddressAutocomplete value={eventForm.location} onChange={(v) => setEventForm({ ...eventForm, location: v })} fieldType="location"
+                    placeholder="e.g. Courtroom 4B, Federal Building"
+                    className="field" />
+                </div>
+                <div>
+                  <label className="flex items-center justify-between text-sm font-medium text-slate-700 mb-1">
+                    Description
+                    <button type="button" onClick={handleEventAutoFill} disabled={autoFilling}
+                      className="flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded text-[11px] font-medium hover:bg-emerald-100 disabled:opacity-50 border border-emerald-200 transition-colors">
+                      {autoFilling ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                      AI Auto-Fill All
+                    </button>
+                  </label>
+                  <InlineAutocomplete value={eventForm.description} onChange={(v) => setEventForm({ ...eventForm, description: v })} fieldType="description"
+                    context="calendar event description for a law firm"
+                    placeholder="Describe this event..."
+                    className="field" />
                 </div>
                 <div className="md:col-span-2 flex gap-3">
-                  <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">Create</button>
-                  <button type="button" onClick={() => setShowEventForm(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50">Cancel</button>
+                  <button type="submit" className="btn-base btn-sm btn-primary">Create</button>
+                  <button type="button" onClick={() => setShowEventForm(false)} className="btn-base btn-sm btn-secondary">Cancel</button>
                 </div>
               </form>
             </div>
           )}
 
           {events.length === 0 ? (
-            <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
+            <div className="panel text-center py-16">
               <CalIcon className="h-12 w-12 mx-auto text-slate-300 mb-3" />
               <h3 className="text-lg font-medium text-slate-600">No events yet</h3>
             </div>
           ) : (
             <div className="grid gap-3">
               {events.map((ev) => (
-                <div key={ev.id} className="bg-white rounded-xl border border-slate-200 p-4">
+                <div key={ev.id} className="panel p-4">
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="flex items-center gap-2">
                         <h3 className="font-medium text-slate-800">{ev.title}</h3>
-                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-                          {ev.event_type}
-                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">{ev.event_type}</span>
                       </div>
                       {ev.location && <p className="text-sm text-slate-500 mt-1">{ev.location}</p>}
+                      {ev.description && <p className="text-xs text-slate-400 mt-0.5">{ev.description}</p>}
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-slate-700">
-                        {new Date(ev.start_time).toLocaleDateString()}
-                      </p>
-                      <p className="text-xs text-slate-400">
-                        {new Date(ev.start_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} -
-                        {new Date(ev.end_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </p>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <p className="text-sm font-medium text-slate-700">{new Date(ev.start_time).toLocaleDateString()}</p>
+                        <p className="text-xs text-slate-400">
+                          {new Date(ev.start_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} -
+                          {new Date(ev.end_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </div>
+                      <button onClick={() => deleteEvent(ev.id)} className="p-1.5 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
                     </div>
                   </div>
                 </div>
@@ -326,6 +546,34 @@ export default function CalendarPage() {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+function DeadlineCard({ dl, getCaseName, priorityColors, toggleDeadline, deleteDeadline, isOverdue }: any) {
+  return (
+    <div className={`bg-white rounded-xl border ${isOverdue ? "border-red-200" : "border-slate-200"} p-4 flex items-center gap-4 ${dl.is_completed ? "opacity-60" : ""}`}>
+      <button onClick={() => toggleDeadline(dl.id, dl.is_completed)}>
+        <CheckCircle2 className={`h-6 w-6 ${dl.is_completed ? "text-emerald-500" : isOverdue ? "text-red-400" : "text-slate-300"}`} />
+      </button>
+      <div className="flex-1">
+        <div className="flex items-center gap-2">
+          <h3 className={`font-medium ${dl.is_completed ? "line-through text-slate-400" : isOverdue ? "text-red-700" : "text-slate-800"}`}>{dl.title}</h3>
+          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${priorityColors[dl.priority]}`}>{dl.priority}</span>
+          {isOverdue && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-600">OVERDUE</span>}
+        </div>
+        {dl.case_id && (
+          <p className="text-xs text-blue-500 mt-0.5 flex items-center gap-1"><Briefcase className="h-3 w-3" /> {getCaseName(dl.case_id)}</p>
+        )}
+        {dl.description && <p className="text-sm text-slate-500 mt-1">{dl.description}</p>}
+      </div>
+      <div className="text-right flex items-center gap-2">
+        <div>
+          <p className={`text-sm font-medium ${isOverdue ? "text-red-600" : "text-slate-700"}`}>{new Date(dl.due_date).toLocaleDateString()}</p>
+          <p className="text-xs text-slate-400">{new Date(dl.due_date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+        </div>
+        <button onClick={() => deleteDeadline(dl.id)} className="p-1.5 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+      </div>
     </div>
   );
 }

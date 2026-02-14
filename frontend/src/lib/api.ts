@@ -1,50 +1,46 @@
 const API_BASE = "/api/backend";
 
 class ApiClient {
-  private token: string | null = null;
-
-  setToken(token: string) {
-    this.token = token;
-    if (typeof window !== "undefined") {
-      localStorage.setItem("token", token);
-    }
-  }
+  setToken(_token: string) {}
 
   getToken(): string | null {
-    if (!this.token && typeof window !== "undefined") {
-      this.token = localStorage.getItem("token");
-    }
-    return this.token;
+    return null;
   }
 
-  clearToken() {
-    this.token = null;
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("token");
-    }
-  }
+  clearToken() {}
 
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const token = this.getToken();
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       ...(options.headers as Record<string, string>),
     };
 
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
+    // Add a 30-second timeout to prevent hanging requests
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}${endpoint}`, {
+        ...options,
+        headers,
+        credentials: "include",
+        signal: controller.signal,
+      });
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err.name === "AbortError") {
+        throw new Error("Request timed out. Is the backend server running?");
+      }
+      throw new Error("Cannot reach server. Make sure the backend is running on port 8000.");
+    } finally {
+      clearTimeout(timeoutId);
     }
 
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers,
-    });
-
     if (response.status === 401) {
-      this.clearToken();
       window.location.href = "/";
       throw new Error("Unauthorized");
     }
@@ -73,6 +69,10 @@ class ApiClient {
     });
   }
 
+  async logout() {
+    return this.request<{ ok: boolean }>("/auth/logout", { method: "POST" });
+  }
+
   async getMe() {
     return this.request<any>("/auth/me");
   }
@@ -85,13 +85,14 @@ class ApiClient {
   }
 
   // Clients
-  async getClients(params?: { status?: string; search?: string }) {
+  async getClients(params?: { status?: string; search?: string; limit?: number; offset?: number }) {
     const query = new URLSearchParams(params as any).toString();
-    return this.request<any[]>(`/clients/?${query}`);
+    const qs = query ? `?${query}` : "";
+    return this.request<any[]>(`/clients${qs}`);
   }
 
   async createClient(data: any) {
-    return this.request<any>("/clients/", {
+    return this.request<any>("/clients", {
       method: "POST",
       body: JSON.stringify(data),
     });
@@ -112,14 +113,19 @@ class ApiClient {
     return this.request<void>(`/clients/${id}`, { method: "DELETE" });
   }
 
+  async getAddresses() {
+    return this.request<string[]>("/clients/addresses");
+  }
+
   // Cases
-  async getCases(params?: { status?: string; client_id?: string; search?: string }) {
+  async getCases(params?: { status?: string; client_id?: string; search?: string; limit?: number; offset?: number }) {
     const query = new URLSearchParams(params as any).toString();
-    return this.request<any[]>(`/cases/?${query}`);
+    const qs = query ? `?${query}` : "";
+    return this.request<any[]>(`/cases${qs}`);
   }
 
   async createCase(data: any) {
-    return this.request<any>("/cases/", {
+    return this.request<any>("/cases", {
       method: "POST",
       body: JSON.stringify(data),
     });
@@ -140,14 +146,27 @@ class ApiClient {
     return this.request<void>(`/cases/${id}`, { method: "DELETE" });
   }
 
+  async syncCaseStatuses() {
+    return this.request<{ updated: number; scanned: number }>("/cases/automation/status-sync", {
+      method: "POST",
+    });
+  }
+
+  async generateCaseDeadlines() {
+    return this.request<{ created: number; cases_processed: number; cases_skipped: number }>("/cases/automation/deadline-templates", {
+      method: "POST",
+    });
+  }
+
   // Documents
-  async getDocuments(params?: { case_id?: string; doc_type?: string; search?: string }) {
+  async getDocuments(params?: { case_id?: string; doc_type?: string; search?: string; limit?: number; offset?: number }) {
     const query = new URLSearchParams(params as any).toString();
-    return this.request<any[]>(`/documents/?${query}`);
+    const qs = query ? `?${query}` : "";
+    return this.request<any[]>(`/documents${qs}`);
   }
 
   async createDocument(data: any) {
-    return this.request<any>("/documents/", {
+    return this.request<any>("/documents", {
       method: "POST",
       body: JSON.stringify(data),
     });
@@ -187,14 +206,27 @@ class ApiClient {
     });
   }
 
+  async draftPreview(data: {
+    doc_type: string;
+    context?: string;
+    template_id?: string;
+    case_id?: string;
+  }) {
+    return this.request<{ title: string; content: string; doc_type: string }>("/documents/draft/preview", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   async getTemplates() {
-    return this.request<any[]>("/documents/templates/");
+    return this.request<any[]>("/documents/templates");
   }
 
   // Billing
-  async getInvoices(params?: { client_id?: string; status?: string }) {
+  async getInvoices(params?: { client_id?: string; status?: string; limit?: number; offset?: number }) {
     const query = new URLSearchParams(params as any).toString();
-    return this.request<any[]>(`/billing/invoices?${query}`);
+    const qs = query ? `?${query}` : "";
+    return this.request<any[]>(`/billing/invoices${qs}`);
   }
 
   async createInvoice(data: any) {
@@ -215,9 +247,17 @@ class ApiClient {
     });
   }
 
-  async getTimeEntries(params?: { case_id?: string; is_billed?: string }) {
+  async getTimeEntries(params?: { case_id?: string; is_billed?: string; limit?: number; offset?: number }) {
     const query = new URLSearchParams(params as any).toString();
-    return this.request<any[]>(`/billing/time-entries?${query}`);
+    const qs = query ? `?${query}` : "";
+    return this.request<any[]>(`/billing/time-entries${qs}`);
+  }
+
+  async autoGenerateInvoice(data: { client_id: string; tax_rate?: number }) {
+    return this.request<any>("/billing/invoices/auto-generate", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
   }
 
   async createTimeEntry(data: any) {
@@ -297,6 +337,97 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify({ text }),
     });
+  }
+
+  async aiSuggest(text: string, fieldType: string = "general", context: string = "") {
+    return this.request<{ suggestions: string[] }>("/ai/suggest", {
+      method: "POST",
+      body: JSON.stringify({ text, field_type: fieldType, context }),
+    });
+  }
+
+  async aiComplete(text: string, fieldType: string = "general", context: string = "") {
+    return this.request<{ completion: string }>("/ai/complete", {
+      method: "POST",
+      body: JSON.stringify({ text, field_type: fieldType, context }),
+    });
+  }
+
+  async aiAutoFill(formType: string, fields: string[], existing?: Record<string, any>, context?: string) {
+    return this.request<Record<string, any>>("/ai/autofill", {
+      method: "POST",
+      body: JSON.stringify({ form_type: formType, fields, existing: existing || {}, context: context || "" }),
+    });
+  }
+
+  // Bulk Import
+  async importClients(data: any[]) {
+    return this.request<{ created: number; updated: number; errors: string[] }>("/clients/import", {
+      method: "POST",
+      body: JSON.stringify({ data }),
+    });
+  }
+
+  async importCases(data: any[]) {
+    return this.request<{ created: number; updated: number; errors: string[] }>("/cases/import", {
+      method: "POST",
+      body: JSON.stringify({ data }),
+    });
+  }
+
+  async importCalendar(data: any[], type: "deadlines" | "events" = "deadlines") {
+    return this.request<{ created: number; updated: number; errors: string[] }>("/calendar/import", {
+      method: "POST",
+      body: JSON.stringify({ data, type }),
+    });
+  }
+
+  async importBilling(data: any[]) {
+    return this.request<{ created: number; updated: number; errors: string[] }>("/billing/import", {
+      method: "POST",
+      body: JSON.stringify({ data }),
+    });
+  }
+
+  async importDocuments(data: any[]) {
+    return this.request<{ created: number; updated: number; errors: string[] }>("/documents/import", {
+      method: "POST",
+      body: JSON.stringify({ data }),
+    });
+  }
+
+  // Dashboard
+  async getDashboardStats() {
+    return this.request<{
+      active_clients: number;
+      open_cases: number;
+      documents: number;
+      pending_invoices: number;
+      total_billed: number;
+      total_collected: number;
+      outstanding: number;
+      billable_hours_month: number;
+    }>("/dashboard/stats");
+  }
+
+  async getDashboardDeadlines() {
+    return this.request<Array<{
+      id: string;
+      title: string;
+      due_date: string;
+      priority: string;
+      case_id: string;
+      case_title: string | null;
+    }>>("/dashboard/deadlines");
+  }
+
+  async getDashboardActivity() {
+    return this.request<Array<{
+      type: string;
+      title: string;
+      timestamp: string;
+      icon: string;
+    }>>("/dashboard/activity");
   }
 }
 

@@ -7,9 +7,96 @@
   --background-rgb: 248, 250, 252;
 }
 
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 body {
+  min-height: 100vh;
   color: rgb(var(--foreground-rgb));
-  background: rgb(var(--background-rgb));
+  background:
+    linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%),
+    rgb(var(--background-rgb));
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  letter-spacing: -0.015em;
+}
+
+h1 {
+  font-weight: 700;
+}
+
+h2,
+h3 {
+  font-weight: 600;
+}
+
+a,
+button {
+  transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+
+@layer components {
+  .panel {
+    @apply rounded-xl border border-slate-200 bg-white p-5 shadow-sm;
+  }
+
+  .panel-soft {
+    @apply rounded-xl border border-slate-200 bg-slate-50 p-5 shadow-sm;
+  }
+
+  .btn-base {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-md {
+    @apply px-4 py-2.5 text-sm;
+  }
+
+  .btn-sm {
+    @apply px-4 py-2 text-sm;
+  }
+
+  .btn-primary {
+    @apply bg-slate-800 text-white hover:bg-slate-900 focus:ring-slate-700;
+  }
+
+  .btn-secondary {
+    @apply border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus:ring-slate-400;
+  }
+
+  .btn-amber {
+    @apply bg-amber-700 text-white hover:bg-amber-800 focus:ring-amber-700;
+  }
+
+  .btn-emerald {
+    @apply bg-emerald-700 text-white hover:bg-emerald-800 focus:ring-emerald-700;
+  }
+
+  .btn-violet {
+    @apply bg-indigo-700 text-white hover:bg-indigo-800 focus:ring-indigo-700;
+  }
+
+  .field {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-600;
+  }
+
+  .field-muted {
+    @apply w-full rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-500;
+  }
+
+  .defer-render {
+    content-visibility: auto;
+    contain-intrinsic-size: 220px;
+  }
 }
 
 @layer utilities {

@@ -20,14 +20,14 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="animate-fade-in max-w-2xl">
-      <div className="mb-6">
+    <div className="animate-fade-in max-w-2xl space-y-6">
+      <div>
         <h1 className="text-2xl font-bold text-slate-800">Settings</h1>
         <p className="text-slate-500 mt-1">Manage your account and preferences</p>
       </div>
 
       {/* Profile */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6 mb-6">
+      <div className="panel p-6">
         <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
           <User className="h-5 w-5 text-blue-600" />
           Profile
@@ -38,7 +38,7 @@ export default function SettingsPage() {
             <input
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              className="field"
             />
           </div>
           <div>
@@ -46,7 +46,7 @@ export default function SettingsPage() {
             <input
               value={user?.email || ""}
               disabled
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-500"
+              className="field-muted"
             />
           </div>
           <div>
@@ -54,17 +54,17 @@ export default function SettingsPage() {
             <input
               value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              className="field"
             />
           </div>
-          <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+          <button type="submit" className="btn-base btn-sm btn-primary">
             Save Profile
           </button>
         </form>
       </div>
 
       {/* Firm Information */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6 mb-6">
+      <div className="panel p-6">
         <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
           <Building2 className="h-5 w-5 text-emerald-600" />
           Firm Information
@@ -75,7 +75,7 @@ export default function SettingsPage() {
             <input
               value={form.firm_name}
               onChange={(e) => setForm({ ...form, firm_name: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              className="field"
             />
           </div>
           <div>
@@ -83,14 +83,14 @@ export default function SettingsPage() {
             <input
               value={form.bar_number}
               onChange={(e) => setForm({ ...form, bar_number: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              className="field"
             />
           </div>
         </div>
       </div>
 
       {/* API Keys */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6">
+      <div className="panel p-6">
         <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
           <Shield className="h-5 w-5 text-violet-600" />
           API Configuration

@@ -14,6 +14,86 @@ from app.services.auth import get_current_user
 router = APIRouter(prefix="/calendar", tags=["Calendar"])
 
 
+@router.post("/import")
+async def import_calendar(
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Bulk import deadlines and events from JSON array. Updates existing by title match."""
+    rows = body.get("data", [])
+    import_type = body.get("type", "deadlines")  # "deadlines" or "events"
+    if not rows:
+        raise HTTPException(status_code=400, detail="No data provided")
+    created = 0
+    updated = 0
+    errors = []
+    for i, row in enumerate(rows):
+        try:
+            title = row.get("title", "").strip()
+            if not title:
+                errors.append(f"Row {i+1}: title is required")
+                continue
+            if import_type == "events":
+                existing = db.query(CalendarEvent).filter(
+                    CalendarEvent.user_id == current_user.id,
+                    CalendarEvent.title.ilike(title)
+                ).first()
+                if existing:
+                    for field in ["event_type", "description", "location"]:
+                        val = row.get(field)
+                        if val is not None and str(val).strip():
+                            setattr(existing, field, val)
+                    if row.get("start_time"):
+                        existing.start_time = datetime.fromisoformat(row["start_time"])
+                    if row.get("end_time"):
+                        existing.end_time = datetime.fromisoformat(row["end_time"])
+                    updated += 1
+                else:
+                    event = CalendarEvent(
+                        user_id=current_user.id,
+                        title=title,
+                        event_type=row.get("event_type", "other"),
+                        description=row.get("description"),
+                        location=row.get("location"),
+                        start_time=datetime.fromisoformat(row["start_time"]) if row.get("start_time") else datetime.utcnow(),
+                        end_time=datetime.fromisoformat(row["end_time"]) if row.get("end_time") else datetime.utcnow(),
+                    )
+                    db.add(event)
+                    created += 1
+            else:
+                existing = db.query(Deadline).filter(
+                    Deadline.user_id == current_user.id,
+                    Deadline.title.ilike(title)
+                ).first()
+                if existing:
+                    for field in ["description", "priority", "case_id"]:
+                        val = row.get(field)
+                        if val is not None and str(val).strip():
+                            setattr(existing, field, val if val else None)
+                    if row.get("due_date"):
+                        existing.due_date = datetime.fromisoformat(row["due_date"])
+                    if row.get("reminder_days"):
+                        existing.reminder_days = int(row["reminder_days"])
+                    updated += 1
+                else:
+                    deadline = Deadline(
+                        user_id=current_user.id,
+                        title=title,
+                        description=row.get("description"),
+                        due_date=datetime.fromisoformat(row["due_date"]) if row.get("due_date") else datetime.utcnow(),
+                        priority=row.get("priority", "medium"),
+                        case_id=row.get("case_id") or None,
+                        reminder_days=int(row.get("reminder_days", 3)),
+                    )
+                    db.add(deadline)
+                    created += 1
+        except Exception as e:
+            errors.append(f"Row {i+1}: {str(e)}")
+    db.commit()
+    return {"created": created, "updated": updated, "errors": errors}
+
+
 # --- Calendar Events ---
 
 @router.get("/events", response_model=list[CalendarEventResponse])

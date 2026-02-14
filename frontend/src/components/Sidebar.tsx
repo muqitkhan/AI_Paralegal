@@ -35,12 +35,12 @@ export default function Sidebar() {
   const router = useRouter();
 
   return (
-    <aside className="w-64 bg-slate-900 text-white flex flex-col min-h-screen fixed left-0 top-0">
+    <aside className="w-64 bg-slate-50 text-slate-700 flex flex-col min-h-screen fixed left-0 top-0 border-r border-slate-200">
       {/* Logo */}
-      <div className="px-6 py-5 border-b border-slate-700/50">
+      <div className="px-6 py-5 border-b border-slate-200">
         <Link href="/dashboard" className="flex items-center gap-2.5">
-          <Scale className="h-7 w-7 text-blue-400" />
-          <span className="text-lg font-bold">AI Paralegal</span>
+          <Scale className="h-7 w-7 text-blue-600" />
+          <span className="text-lg font-semibold tracking-tight text-slate-800">AI Paralegal</span>
         </Link>
       </div>
 
@@ -57,8 +57,8 @@ export default function Sidebar() {
               className={clsx(
                 "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150",
                 isActive
-                  ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  ? "bg-slate-800 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-white hover:text-slate-800"
               )}
             >
               <item.icon className="h-5 w-5" />
@@ -69,11 +69,11 @@ export default function Sidebar() {
       </nav>
 
       {/* Sign out */}
-      <div className="px-3 py-4 border-t border-slate-700/50">
+      <div className="px-3 py-4 border-t border-slate-200">
         <button
           onClick={() => { logout(); router.push("/"); }}
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
-                     text-slate-400 hover:bg-slate-800 hover:text-white transition-all w-full"
+                     text-slate-500 hover:bg-white hover:text-slate-700 transition-all w-full"
         >
           <LogOut className="h-5 w-5" />
           Sign Out

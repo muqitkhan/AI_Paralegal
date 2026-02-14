@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/store";
 import Sidebar from "@/components/Sidebar";
 import Header from "@/components/Header";
+import Footer from "@/components/Footer";
 
 export default function DashboardLayout({
   children,
@@ -37,9 +38,12 @@ export default function DashboardLayout({
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
-      <div className="flex-1 ml-64">
+      <div className="ml-64 flex min-h-screen flex-1 flex-col">
         <Header />
-        <main className="p-6">{children}</main>
+        <main className="flex-1 px-8 py-7 lg:px-10">
+          <div className="mx-auto w-full max-w-[1400px]">{children}</div>
+        </main>
+        <Footer />
       </div>
     </div>
   );

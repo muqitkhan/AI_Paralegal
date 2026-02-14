@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -10,10 +10,78 @@ from app.services.auth import get_current_user
 router = APIRouter(prefix="/clients", tags=["Clients"])
 
 
-@router.get("/", response_model=list[ClientResponse])
+@router.post("/import")
+async def import_clients(
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Bulk import clients from JSON array. Updates existing by name match."""
+    rows = body.get("data", [])
+    if not rows:
+        raise HTTPException(status_code=400, detail="No data provided")
+    created = 0
+    updated = 0
+    errors = []
+    for i, row in enumerate(rows):
+        try:
+            name = row.get("name", "").strip()
+            if not name:
+                errors.append(f"Row {i+1}: name is required")
+                continue
+            # Check if client already exists (by name + user)
+            existing = db.query(Client).filter(
+                Client.user_id == current_user.id,
+                Client.name.ilike(name)
+            ).first()
+            if existing:
+                # Update existing record with non-empty fields
+                for field in ["email", "phone", "address", "company", "status", "notes"]:
+                    val = row.get(field)
+                    if val is not None and str(val).strip():
+                        setattr(existing, field, val)
+                updated += 1
+            else:
+                client = Client(
+                    user_id=current_user.id,
+                    name=name,
+                    email=row.get("email"),
+                    phone=row.get("phone"),
+                    address=row.get("address"),
+                    company=row.get("company"),
+                    status=row.get("status", "active"),
+                    notes=row.get("notes"),
+                )
+                db.add(client)
+                created += 1
+        except Exception as e:
+            errors.append(f"Row {i+1}: {str(e)}")
+    db.commit()
+    return {"created": created, "updated": updated, "errors": errors}
+
+
+@router.get("/addresses")
+async def list_addresses(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return distinct non-empty addresses used by this user's clients."""
+    rows = (
+        db.query(Client.address)
+        .filter(Client.user_id == current_user.id, Client.address.isnot(None), Client.address != "")
+        .distinct()
+        .order_by(Client.address)
+        .all()
+    )
+    return [r[0] for r in rows]
+
+
+@router.get("", response_model=list[ClientResponse])
 async def list_clients(
     status: str | None = None,
     search: str | None = None,
+    limit: int = Query(default=25, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -22,10 +90,10 @@ async def list_clients(
         query = query.filter(Client.status == status)
     if search:
         query = query.filter(Client.name.ilike(f"%{search}%"))
-    return query.order_by(Client.created_at.desc()).all()
+    return query.order_by(Client.created_at.desc()).offset(offset).limit(limit).all()
 
 
-@router.post("/", response_model=ClientResponse, status_code=201)
+@router.post("", response_model=ClientResponse, status_code=201)
 async def create_client(
     data: ClientCreate,
     current_user: User = Depends(get_current_user),
