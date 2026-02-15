@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { DollarSign, Plus, Clock, Receipt, Zap, Briefcase, Loader2, Sparkles, Download } from "lucide-react";
 import toast from "react-hot-toast";
@@ -11,6 +12,7 @@ import { downloadTextFile, invoiceToText } from "@/lib/download";
 const PAGE_SIZE = 25;
 
 export default function BillingPage() {
+  const searchParams = useSearchParams();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [timeEntries, setTimeEntries] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
@@ -45,7 +47,15 @@ export default function BillingPage() {
     case_id: "",
   });
 
+  const focusParam = searchParams.get("focus");
+
   useEffect(() => { loadData(true); }, []);
+
+  useEffect(() => {
+    if (focusParam === "all" || focusParam === "paid" || focusParam === "outstanding") {
+      setActiveTab("invoices");
+    }
+  }, [focusParam]);
 
   async function loadData(reset = true) {
     const invoiceOffset = reset ? 0 : invoices.length;
@@ -172,6 +182,11 @@ export default function BillingPage() {
   const totalHours = timeEntries.reduce((sum, t) => sum + Number(t.hours), 0);
   const unbilledEntries = timeEntries.filter(t => !t.is_billed && t.is_billable);
   const unbilledAmount = unbilledEntries.reduce((sum, t) => sum + Number(t.hours) * Number(t.rate), 0);
+  const focusedInvoices = focusParam === "paid"
+    ? invoices.filter(inv => inv.status === "paid")
+    : focusParam === "outstanding"
+      ? invoices.filter(inv => inv.status === "sent" || inv.status === "overdue")
+      : invoices;
 
   // Helper to get case name
   const getCaseName = (caseId: string) => cases.find(c => c.id === caseId)?.title || "";
@@ -189,6 +204,11 @@ export default function BillingPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Billing</h1>
           <p className="text-slate-500 mt-1">Invoices, time tracking, and payments</p>
+          {(focusParam === "paid" || focusParam === "outstanding") && (
+            <p className="text-xs text-slate-500 mt-1">
+              {focusParam === "paid" ? "Showing collected invoices" : "Showing outstanding invoices"}
+            </p>
+          )}
         </div>
         <FileImport
           onImport={(data) => api.importBilling(data).then((r) => { loadData(); return r; })}
@@ -424,14 +444,14 @@ export default function BillingPage() {
             </div>
           )}
 
-          {invoices.length === 0 ? (
+          {focusedInvoices.length === 0 ? (
             <div className="panel text-center py-16">
               <Receipt className="h-12 w-12 mx-auto text-slate-300 mb-3" />
               <h3 className="text-lg font-medium text-slate-600">No invoices yet</h3>
             </div>
           ) : (
             <div className="grid gap-4">
-              {invoices.map((inv) => (
+              {focusedInvoices.map((inv) => (
                 <div key={inv.id} className="panel defer-render">
                   <div className="flex items-center justify-between">
                     <div>

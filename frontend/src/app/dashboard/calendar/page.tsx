@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { Calendar as CalIcon, Plus, AlertTriangle, CheckCircle2, Briefcase, Clock, Trash2, Zap, Sparkles, Loader2, Filter, ChevronDown, ChevronUp } from "lucide-react";
 import toast from "react-hot-toast";
@@ -10,21 +11,28 @@ import FileImport from "@/components/FileImport";
 
 const eventTypes = ["hearing", "meeting", "deposition", "filing", "consultation", "other"];
 const priorities = ["low", "medium", "high", "critical"];
+const appointmentStatuses = ["scheduled", "confirmed", "completed", "cancelled", "missed"];
 
 export default function CalendarPage() {
+  const searchParams = useSearchParams();
   const [events, setEvents] = useState<any[]>([]);
   const [deadlines, setDeadlines] = useState<any[]>([]);
+  const [appointments, setAppointments] = useState<any[]>([]);
   const [cases, setCases] = useState<any[]>([]);
+  const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"events" | "deadlines">("deadlines");
+  const [activeTab, setActiveTab] = useState<"events" | "deadlines" | "appointments">("deadlines");
   const [showEventForm, setShowEventForm] = useState(false);
   const [showDeadlineForm, setShowDeadlineForm] = useState(false);
+  const [showAppointmentForm, setShowAppointmentForm] = useState(false);
   const [filterCase, setFilterCase] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
   const [showCompleted, setShowCompleted] = useState(false);
   const [autoCaseId, setAutoCaseId] = useState("");
   const [autoFilling, setAutoFilling] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [automationRunning, setAutomationRunning] = useState(false);
+  const [editingAppointmentId, setEditingAppointmentId] = useState<string | null>(null);
 
   const [eventForm, setEventForm] = useState({
     title: "",
@@ -44,16 +52,39 @@ export default function CalendarPage() {
     case_id: "",
   });
 
+  const [appointmentForm, setAppointmentForm] = useState({
+    title: "",
+    case_id: "",
+    client_id: "",
+    notes: "",
+    location: "",
+    start_time: "",
+    end_time: "",
+    status: "scheduled",
+    reminder_minutes: 30,
+    auto_follow_up: true,
+    follow_up_template: "",
+  });
+
   useEffect(() => { loadData(); }, []);
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab === "appointments" || tab === "events" || tab === "deadlines") {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
 
   async function loadData() {
     try {
-      const [ev, dl, cs] = await Promise.all([
+      const [ev, dl, ap, cs, cl] = await Promise.all([
         api.getEvents().catch(() => []),
         api.getDeadlines().catch(() => []),
+        api.getAppointments().catch(() => []),
         api.getCases().catch(() => []),
+        api.getClients().catch(() => []),
       ]);
-      setEvents(ev); setDeadlines(dl); setCases(cs);
+      setEvents(ev); setDeadlines(dl); setAppointments(ap); setCases(cs); setClients(cl);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }
@@ -137,6 +168,118 @@ export default function CalendarPage() {
     try { await api.deleteEvent(id); toast.success("Deleted"); loadData(); } catch (err: any) { toast.error(err.message); }
   }
 
+  async function handleCreateAppointment(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      const payload: any = {
+        ...appointmentForm,
+        start_time: new Date(appointmentForm.start_time).toISOString(),
+        end_time: new Date(appointmentForm.end_time).toISOString(),
+      };
+      if (!payload.case_id) delete payload.case_id;
+      if (!payload.client_id) delete payload.client_id;
+      if (!payload.follow_up_template) delete payload.follow_up_template;
+      if (editingAppointmentId) {
+        await api.updateAppointment(editingAppointmentId, payload);
+        toast.success("Appointment updated");
+      } else {
+        await api.createAppointment(payload);
+        toast.success("Appointment created");
+      }
+      setShowAppointmentForm(false);
+      setEditingAppointmentId(null);
+      setAppointmentForm({
+        title: "",
+        case_id: "",
+        client_id: "",
+        notes: "",
+        location: "",
+        start_time: "",
+        end_time: "",
+        status: "scheduled",
+        reminder_minutes: 30,
+        auto_follow_up: true,
+        follow_up_template: "",
+      });
+      loadData();
+    } catch (err: any) { toast.error(err.message); }
+  }
+
+  function toLocalDateTimeInput(iso: string) {
+    const date = new Date(iso);
+    const offsetMinutes = date.getTimezoneOffset();
+    return new Date(date.getTime() - offsetMinutes * 60_000).toISOString().slice(0, 16);
+  }
+
+  function handleEditAppointment(appointment: any) {
+    setEditingAppointmentId(appointment.id);
+    setShowAppointmentForm(true);
+    setAppointmentForm({
+      title: appointment.title || "",
+      case_id: appointment.case_id || "",
+      client_id: appointment.client_id || "",
+      notes: appointment.notes || "",
+      location: appointment.location || "",
+      start_time: appointment.start_time ? toLocalDateTimeInput(appointment.start_time) : "",
+      end_time: appointment.end_time ? toLocalDateTimeInput(appointment.end_time) : "",
+      status: appointment.status || "scheduled",
+      reminder_minutes: typeof appointment.reminder_minutes === "number" ? appointment.reminder_minutes : 30,
+      auto_follow_up: typeof appointment.auto_follow_up === "boolean" ? appointment.auto_follow_up : true,
+      follow_up_template: appointment.follow_up_template || "",
+    });
+  }
+
+  function resetAppointmentForm() {
+    setShowAppointmentForm(false);
+    setEditingAppointmentId(null);
+    setAppointmentForm({
+      title: "",
+      case_id: "",
+      client_id: "",
+      notes: "",
+      location: "",
+      start_time: "",
+      end_time: "",
+      status: "scheduled",
+      reminder_minutes: 30,
+      auto_follow_up: true,
+      follow_up_template: "",
+    });
+  }
+
+  async function updateAppointmentStatus(id: string, status: string) {
+    try {
+      await api.updateAppointment(id, { status });
+      loadData();
+    } catch (err: any) { toast.error(err.message); }
+  }
+
+  async function deleteAppointment(id: string) {
+    if (!confirm("Delete this appointment?")) return;
+    try { await api.deleteAppointment(id); toast.success("Deleted"); loadData(); } catch (err: any) { toast.error(err.message); }
+  }
+
+  async function runAppointmentAutomation() {
+    setAutomationRunning(true);
+    try {
+      const result = await api.runAppointmentAutomation({ reminder_window_minutes: 60, follow_up_due_days: 2 });
+      toast.success(`Automation complete: ${result.reminders_flagged} reminders, ${result.followups_created} follow-ups`);
+      if (result.reminders.length) {
+        toast((t) => (
+          <div className="text-sm">
+            <p className="font-semibold">Upcoming reminders</p>
+            <ul className="list-disc ml-4">
+              {result.reminders.slice(0, 3).map((reminder: string) => <li key={reminder}>{reminder}</li>)}
+            </ul>
+            <button onClick={() => toast.dismiss(t.id)} className="mt-1 text-xs text-blue-600">Dismiss</button>
+          </div>
+        ));
+      }
+      loadData();
+    } catch (err: any) { toast.error(err.message || "Automation failed"); }
+    finally { setAutomationRunning(false); }
+  }
+
   async function autoCreateDeadlines(caseId: string) {
     const c = cases.find(cs => cs.id === caseId);
     if (!c) return;
@@ -181,6 +324,7 @@ export default function CalendarPage() {
   };
 
   const getCaseName = (caseId: string) => cases.find(c => c.id === caseId)?.title || "";
+  const getClientName = (clientId: string) => clients.find(c => c.id === clientId)?.name || "";
 
   const now = new Date();
   const isOverdue = (d: any) => !d.is_completed && new Date(d.due_date) < now;
@@ -199,6 +343,7 @@ export default function CalendarPage() {
   const overdueCount = deadlines.filter(d => !d.is_completed && new Date(d.due_date) < now).length;
   const todayCount = deadlines.filter(d => !d.is_completed && isToday(d)).length;
   const activeCount = deadlines.filter(d => !d.is_completed).length;
+  const scheduledAppointments = appointments.filter(a => ["scheduled", "confirmed"].includes(a.status)).length;
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -207,11 +352,13 @@ export default function CalendarPage() {
           <h1 className="text-2xl font-bold text-slate-800">Calendar & Deadlines</h1>
           <p className="text-slate-500 mt-1">Track court dates, filings, and important deadlines</p>
         </div>
-        <FileImport
-          onImport={(data) => api.importCalendar(data, activeTab === "events" ? "events" : "deadlines").then((r) => { loadData(); return r; })}
-          sampleFields={activeTab === "events" ? ["title", "event_type", "start_time", "end_time", "location"] : ["title", "due_date", "priority", "case_id", "description"]}
-          entityName={activeTab === "events" ? "event" : "deadline"}
-        />
+        {activeTab !== "appointments" && (
+          <FileImport
+            onImport={(data) => api.importCalendar(data, activeTab === "events" ? "events" : "deadlines").then((r) => { loadData(); return r; })}
+            sampleFields={activeTab === "events" ? ["title", "event_type", "start_time", "end_time", "location"] : ["title", "due_date", "priority", "case_id", "description"]}
+            entityName={activeTab === "events" ? "event" : "deadline"}
+          />
+        )}
       </div>
 
       {/* Stats */}
@@ -227,6 +374,10 @@ export default function CalendarPage() {
         <div className={`panel ${todayCount > 0 ? "border-amber-200" : "border-slate-200"}`}>
           <p className={`text-sm ${todayCount > 0 ? "text-amber-600" : "text-slate-500"}`}>Due Today</p>
           <p className={`text-2xl font-bold ${todayCount > 0 ? "text-amber-600" : "text-slate-400"}`}>{todayCount}</p>
+        </div>
+        <div className="panel">
+          <p className="text-sm text-slate-500">Appts (Active)</p>
+          <p className="text-2xl font-bold text-indigo-600">{scheduledAppointments}</p>
         </div>
         <div className="panel">
           <p className="text-sm text-slate-500">Events</p>
@@ -245,6 +396,11 @@ export default function CalendarPage() {
           className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === "events" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}>
           <CalIcon className="h-4 w-4 inline mr-1.5" />
           Events
+        </button>
+        <button onClick={() => setActiveTab("appointments")}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === "appointments" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}>
+          <Clock className="h-4 w-4 inline mr-1.5" />
+          Appointments
         </button>
       </div>
 
@@ -546,6 +702,173 @@ export default function CalendarPage() {
           )}
         </>
       )}
+
+      {activeTab === "appointments" && (
+        <>
+          <div className="flex justify-between items-center mb-4">
+            <button
+              onClick={runAppointmentAutomation}
+              disabled={automationRunning}
+              className="btn-base btn-sm btn-amber disabled:opacity-60"
+            >
+              <Zap className="h-4 w-4" /> {automationRunning ? "Running..." : "Run Automation"}
+            </button>
+            <button onClick={() => setShowAppointmentForm(!showAppointmentForm)} className="btn-base btn-sm btn-primary">
+              <Plus className="h-4 w-4" /> New Appointment
+            </button>
+          </div>
+
+          {showAppointmentForm && (
+            <div className="panel p-6 mb-6">
+              <h3 className="text-lg font-semibold text-slate-800 mb-4">{editingAppointmentId ? "Edit Appointment" : "New Appointment"}</h3>
+              <form onSubmit={handleCreateAppointment} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Title *</label>
+                  <InlineAutocomplete
+                    required
+                    value={appointmentForm.title}
+                    onChange={(v) => setAppointmentForm({ ...appointmentForm, title: v })}
+                    fieldType="appointment_title"
+                    placeholder="e.g. Client Intake Call"
+                    className="field"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                  <select
+                    value={appointmentForm.status}
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, status: e.target.value })}
+                    className="field"
+                  >
+                    {appointmentStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Client</label>
+                  <select
+                    value={appointmentForm.client_id}
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, client_id: e.target.value })}
+                    className="field"
+                  >
+                    <option value="">No client</option>
+                    {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Case</label>
+                  <select
+                    value={appointmentForm.case_id}
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, case_id: e.target.value })}
+                    className="field"
+                  >
+                    <option value="">No case</option>
+                    {cases.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Start *</label>
+                  <input
+                    required
+                    type="datetime-local"
+                    value={appointmentForm.start_time}
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, start_time: e.target.value })}
+                    className="field"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">End *</label>
+                  <input
+                    required
+                    type="datetime-local"
+                    value={appointmentForm.end_time}
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, end_time: e.target.value })}
+                    className="field"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Location</label>
+                  <AddressAutocomplete
+                    value={appointmentForm.location}
+                    onChange={(v) => setAppointmentForm({ ...appointmentForm, location: v })}
+                    fieldType="location"
+                    placeholder="e.g. Zoom / Office"
+                    className="field"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Reminder (minutes before)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={appointmentForm.reminder_minutes}
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, reminder_minutes: parseInt(e.target.value || "0") })}
+                    className="field"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
+                  <InlineAutocomplete
+                    as="textarea"
+                    value={appointmentForm.notes}
+                    onChange={(v) => setAppointmentForm({ ...appointmentForm, notes: v })}
+                    fieldType="description"
+                    context="appointment notes"
+                    rows={2}
+                    className="field"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={appointmentForm.auto_follow_up}
+                      onChange={(e) => setAppointmentForm({ ...appointmentForm, auto_follow_up: e.target.checked })}
+                    />
+                    Auto-create follow-up deadline after completion
+                  </label>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Follow-up Template (optional)</label>
+                  <InlineAutocomplete
+                    as="textarea"
+                    value={appointmentForm.follow_up_template}
+                    onChange={(v) => setAppointmentForm({ ...appointmentForm, follow_up_template: v })}
+                    fieldType="description"
+                    context="follow up task template"
+                    rows={2}
+                    className="field"
+                  />
+                </div>
+                <div className="md:col-span-2 flex gap-3">
+                  <button type="submit" className="btn-base btn-sm btn-primary">{editingAppointmentId ? "Update" : "Create"}</button>
+                  <button type="button" onClick={resetAppointmentForm} className="btn-base btn-sm btn-secondary">Cancel</button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {appointments.length === 0 ? (
+            <div className="panel text-center py-16">
+              <Clock className="h-12 w-12 mx-auto text-slate-300 mb-3" />
+              <h3 className="text-lg font-medium text-slate-600">No appointments yet</h3>
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {appointments.map((appointment) => (
+                <AppointmentCard
+                  key={appointment.id}
+                  appointment={appointment}
+                  getCaseName={getCaseName}
+                  getClientName={getClientName}
+                  onDelete={deleteAppointment}
+                  onEdit={handleEditAppointment}
+                  onStatusChange={updateAppointmentStatus}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -573,6 +896,51 @@ function DeadlineCard({ dl, getCaseName, priorityColors, toggleDeadline, deleteD
           <p className="text-xs text-slate-400">{new Date(dl.due_date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
         </div>
         <button onClick={() => deleteDeadline(dl.id)} className="p-1.5 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+      </div>
+    </div>
+  );
+}
+
+function AppointmentCard({ appointment, getCaseName, getClientName, onDelete, onEdit, onStatusChange }: any) {
+  const statusColors: Record<string, string> = {
+    scheduled: "bg-blue-100 text-blue-700",
+    confirmed: "bg-indigo-100 text-indigo-700",
+    completed: "bg-emerald-100 text-emerald-700",
+    cancelled: "bg-slate-200 text-slate-600",
+    missed: "bg-red-100 text-red-700",
+  };
+
+  return (
+    <div className="panel p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="font-medium text-slate-800">{appointment.title}</h3>
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[appointment.status] || statusColors.scheduled}`}>
+              {appointment.status}
+            </span>
+          </div>
+          {appointment.client_id && <p className="text-xs text-slate-500 mt-1">Client: {getClientName(appointment.client_id)}</p>}
+          {appointment.case_id && <p className="text-xs text-blue-500 mt-0.5">Case: {getCaseName(appointment.case_id)}</p>}
+          {appointment.location && <p className="text-sm text-slate-500 mt-1">{appointment.location}</p>}
+          {appointment.notes && <p className="text-xs text-slate-400 mt-0.5">{appointment.notes}</p>}
+        </div>
+        <div className="text-right">
+          <p className="text-sm font-medium text-slate-700">{new Date(appointment.start_time).toLocaleDateString()}</p>
+          <p className="text-xs text-slate-400">
+            {new Date(appointment.start_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} - {new Date(appointment.end_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </p>
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <button onClick={() => onEdit(appointment)} className="text-xs text-blue-600 hover:text-blue-700">Edit</button>
+            {appointment.status !== "completed" && (
+              <button onClick={() => onStatusChange(appointment.id, "completed")} className="text-xs text-emerald-600 hover:text-emerald-700">Complete</button>
+            )}
+            {appointment.status !== "cancelled" && appointment.status !== "completed" && (
+              <button onClick={() => onStatusChange(appointment.id, "cancelled")} className="text-xs text-slate-500 hover:text-slate-700">Cancel</button>
+            )}
+            <button onClick={() => onDelete(appointment.id)} className="p-1.5 text-slate-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+          </div>
+        </div>
       </div>
     </div>
   );

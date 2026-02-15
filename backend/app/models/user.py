@@ -28,3 +28,4 @@ class User(Base):
     time_entries = relationship("TimeEntry", back_populates="user", cascade="all, delete-orphan")
     calendar_events = relationship("CalendarEvent", back_populates="user", cascade="all, delete-orphan")
     deadlines = relationship("Deadline", back_populates="user", cascade="all, delete-orphan")
+    appointments = relationship("Appointment", back_populates="user", cascade="all, delete-orphan")

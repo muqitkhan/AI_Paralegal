@@ -72,3 +72,65 @@ class DeadlineResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class AppointmentCreate(BaseModel):
+    title: str
+    case_id: str | None = None
+    client_id: str | None = None
+    notes: str | None = None
+    location: str | None = None
+    start_time: datetime
+    end_time: datetime
+    status: str = "scheduled"
+    reminder_minutes: int = 30
+    auto_follow_up: bool = True
+    follow_up_template: str | None = None
+
+
+class AppointmentUpdate(BaseModel):
+    title: str | None = None
+    case_id: str | None = None
+    client_id: str | None = None
+    notes: str | None = None
+    location: str | None = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    status: str | None = None
+    reminder_minutes: int | None = None
+    auto_follow_up: bool | None = None
+    follow_up_template: str | None = None
+
+
+class AppointmentResponse(BaseModel):
+    id: str
+    title: str
+    case_id: str | None
+    client_id: str | None
+    notes: str | None
+    location: str | None
+    start_time: datetime
+    end_time: datetime
+    status: str
+    reminder_minutes: int
+    auto_follow_up: bool
+    follow_up_template: str | None
+    reminder_sent_at: datetime | None
+    follow_up_created_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AppointmentAutomationRunRequest(BaseModel):
+    reminder_window_minutes: int = 60
+    follow_up_due_days: int = 2
+
+
+class AppointmentAutomationResponse(BaseModel):
+    reminders_flagged: int
+    appointments_auto_completed: int
+    followups_created: int
+    reminders: list[str]

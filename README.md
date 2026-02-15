@@ -20,6 +20,7 @@ Frontend (Next.js 14)  →  Backend (FastAPI)  →  PostgreSQL
 | **Document Drafting** | AI-generated contracts, agreements, and legal documents |
 | **Billing & Time** | Invoice generation, payment status, amount tracking |
 | **Calendar & Deadlines** | Court dates, filing deadlines, event management |
+| **Appointments & Automation** | Appointment scheduling, reminder automation, auto follow-up deadlines |
 | **AI Legal Research** | AI-powered case law search, statute analysis, summarization |
 
 **Cross-cutting features on all modules:**

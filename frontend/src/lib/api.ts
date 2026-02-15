@@ -318,6 +318,47 @@ class ApiClient {
     return this.request<void>(`/calendar/deadlines/${id}`, { method: "DELETE" });
   }
 
+  async getAppointments(params?: {
+    start_date?: string;
+    end_date?: string;
+    status?: string;
+    case_id?: string;
+    client_id?: string;
+  }) {
+    const query = new URLSearchParams(params as any).toString();
+    return this.request<any[]>(`/calendar/appointments?${query}`);
+  }
+
+  async createAppointment(data: any) {
+    return this.request<any>("/calendar/appointments", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateAppointment(id: string, data: any) {
+    return this.request<any>(`/calendar/appointments/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAppointment(id: string) {
+    return this.request<void>(`/calendar/appointments/${id}`, { method: "DELETE" });
+  }
+
+  async runAppointmentAutomation(data?: { reminder_window_minutes?: number; follow_up_due_days?: number }) {
+    return this.request<{
+      reminders_flagged: number;
+      appointments_auto_completed: number;
+      followups_created: number;
+      reminders: string[];
+    }>("/calendar/appointments/automation/run", {
+      method: "POST",
+      body: JSON.stringify(data || {}),
+    });
+  }
+
   // AI Research
   async doResearch(data: {
     query: string;
@@ -428,6 +469,22 @@ class ApiClient {
       timestamp: string;
       icon: string;
     }>>("/dashboard/activity");
+  }
+
+  async getDashboardAppointments() {
+    return this.request<Array<{
+      id: string;
+      title: string;
+      start_time: string;
+      end_time: string;
+      status: string;
+      location: string | null;
+      notes: string | null;
+      case_id: string | null;
+      case_title: string | null;
+      client_id: string | null;
+      client_name: string | null;
+    }>>("/dashboard/appointments");
   }
 }
 

@@ -14,6 +14,7 @@ import {
   ChevronDown,
   Loader2,
 } from "lucide-react";
+import Link from "next/link";
 import { useAuth } from "@/lib/store";
 import { api } from "@/lib/api";
 
@@ -43,6 +44,8 @@ export default function Header() {
   /* --- profile dropdown state --- */
   const [showProfile, setShowProfile] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
+  const [urgentAppointment, setUrgentAppointment] = useState<any | null>(null);
+  const [minutesLeft, setMinutesLeft] = useState<number | null>(null);
 
   /* close dropdowns on outside click */
   useEffect(() => {
@@ -123,6 +126,68 @@ export default function Header() {
     debounceRef.current = setTimeout(() => doSearch(val), 300);
   }
 
+  const checkUrgentAppointments = useCallback(async () => {
+    try {
+      const appointments = await api.getAppointments({ status: "scheduled" }).catch(() => []);
+      const confirmed = await api.getAppointments({ status: "confirmed" }).catch(() => []);
+      const rows = [...appointments, ...confirmed] as any[];
+      const now = Date.now();
+      const threshold = now + 15 * 60 * 1000;
+
+      const candidate = rows
+        .map((item) => {
+          const start = new Date(item.start_time).getTime();
+          return { ...item, _start: start };
+        })
+        .filter((item) => item._start >= now && item._start <= threshold)
+        .sort((a, b) => a._start - b._start)
+        .find((item) => {
+          const key = `appointment_snooze_until_${item.id}`;
+          const snoozeUntilRaw = typeof window !== "undefined" ? localStorage.getItem(key) : null;
+          const snoozeUntil = snoozeUntilRaw ? Number(snoozeUntilRaw) : 0;
+          return !snoozeUntil || now >= snoozeUntil;
+        });
+
+      if (!candidate) {
+        setUrgentAppointment(null);
+        setMinutesLeft(null);
+        return;
+      }
+
+      setUrgentAppointment(candidate);
+      const mins = Math.max(0, Math.ceil((candidate._start - now) / 60000));
+      setMinutesLeft(mins);
+    } catch {
+      setUrgentAppointment(null);
+      setMinutesLeft(null);
+    }
+  }, []);
+
+  function snoozeAppointment(minutes: number) {
+    if (!urgentAppointment) return;
+    const key = `appointment_snooze_until_${urgentAppointment.id}`;
+    const until = Date.now() + minutes * 60 * 1000;
+    localStorage.setItem(key, String(until));
+    setUrgentAppointment(null);
+    setMinutesLeft(null);
+  }
+
+  useEffect(() => {
+    checkUrgentAppointments();
+
+    const intervalId = window.setInterval(() => {
+      checkUrgentAppointments();
+    }, 60000);
+
+    const onFocus = () => checkUrgentAppointments();
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [checkUrgentAppointments]);
+
   /* group results by category */
   const grouped = results.reduce<Record<string, SearchResult[]>>((acc, r) => {
     (acc[r.category] ||= []).push(r);
@@ -194,10 +259,32 @@ export default function Header() {
 
       {/* ---- Right side ---- */}
       <div className="flex items-center gap-4">
+        {urgentAppointment && (
+          <div className="hidden lg:flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5">
+            <Bell className="h-4 w-4 text-amber-600" />
+            <div className="text-xs">
+              <p className="font-medium text-amber-700">{urgentAppointment.title} in {minutesLeft ?? 0}m</p>
+              <p className="text-amber-600">Upcoming appointment reminder</p>
+            </div>
+            <Link
+              href={`/dashboard/calendar?tab=appointments&appointment_id=${urgentAppointment.id}`}
+              className="text-xs font-medium text-blue-600 hover:text-blue-700"
+            >
+              Open
+            </Link>
+            <button
+              onClick={() => snoozeAppointment(10)}
+              className="text-xs font-medium text-slate-600 hover:text-slate-700"
+            >
+              Snooze 10m
+            </button>
+          </div>
+        )}
+
         {/* Notifications */}
         <button className="relative rounded-lg p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
           <Bell className="h-5 w-5" />
-          <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-red-500 rounded-full" />
+          {urgentAppointment && <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-red-500 rounded-full" />}
         </button>
 
         {/* Profile dropdown */}

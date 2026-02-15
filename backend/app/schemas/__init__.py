@@ -15,5 +15,7 @@ from app.schemas.billing import (
 from app.schemas.calendar import (
     CalendarEventCreate, CalendarEventResponse, CalendarEventUpdate,
     DeadlineCreate, DeadlineResponse, DeadlineUpdate,
+    AppointmentCreate, AppointmentResponse, AppointmentUpdate,
+    AppointmentAutomationRunRequest, AppointmentAutomationResponse,
 )
 from app.schemas.ai import ResearchRequest, ResearchResponse

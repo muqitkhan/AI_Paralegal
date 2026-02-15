@@ -22,6 +22,14 @@ class DeadlinePriority(str, enum.Enum):
     CRITICAL = "critical"
 
 
+class AppointmentStatus(str, enum.Enum):
+    SCHEDULED = "scheduled"
+    CONFIRMED = "confirmed"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    MISSED = "missed"
+
+
 class CalendarEvent(Base):
     __tablename__ = "calendar_events"
 
@@ -61,3 +69,31 @@ class Deadline(Base):
     # Relationships
     user = relationship("User", back_populates="deadlines")
     case = relationship("Case", back_populates="deadlines")
+
+
+class Appointment(Base):
+    __tablename__ = "appointments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    case_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("cases.id"), nullable=True)
+    client_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("clients.id"), nullable=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    location: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    end_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    status: Mapped[AppointmentStatus] = mapped_column(
+        SAEnum(AppointmentStatus), default=AppointmentStatus.SCHEDULED
+    )
+    reminder_minutes: Mapped[int] = mapped_column(default=30)
+    auto_follow_up: Mapped[bool] = mapped_column(Boolean, default=True)
+    follow_up_template: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reminder_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    follow_up_created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="appointments")
+    case = relationship("Case", back_populates="appointments")
+    client = relationship("Client", back_populates="appointments")

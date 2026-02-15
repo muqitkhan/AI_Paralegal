@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/lib/store";
 import { api } from "@/lib/api";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Users,
   Briefcase,
@@ -12,6 +12,8 @@ import {
   AlertTriangle,
   TrendingUp,
   Clock,
+  MapPin,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -38,28 +40,65 @@ export default function DashboardPage() {
 
   const [stats, setStats] = useState<any>(null);
   const [deadlines, setDeadlines] = useState<any[]>([]);
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [selectedAppointment, setSelectedAppointment] = useState<any | null>(null);
   const [activity, setActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const isSyncingRef = useRef(false);
+
+  const loadDashboardData = useCallback(async () => {
+    if (isSyncingRef.current) return;
+    isSyncingRef.current = true;
+    try {
+      const [s, d, ap, a] = await Promise.all([
+        api.getDashboardStats(),
+        api.getDashboardDeadlines(),
+        api.getDashboardAppointments(),
+        api.getDashboardActivity(),
+      ]);
+      setStats(s);
+      setDeadlines(d);
+      setAppointments(ap);
+      setSelectedAppointment((prev) => {
+        if (!ap.length) return null;
+        if (!prev) return ap[0];
+        return ap.find((item: any) => item.id === prev.id) || ap[0];
+      });
+      setActivity(a);
+    } catch (e) {
+      console.error("Dashboard load error:", e);
+    } finally {
+      setLoading(false);
+      isSyncingRef.current = false;
+    }
+  }, []);
 
   useEffect(() => {
-    async function load() {
-      try {
-        const [s, d, a] = await Promise.all([
-          api.getDashboardStats(),
-          api.getDashboardDeadlines(),
-          api.getDashboardActivity(),
-        ]);
-        setStats(s);
-        setDeadlines(d);
-        setActivity(a);
-      } catch (e) {
-        console.error("Dashboard load error:", e);
-      } finally {
-        setLoading(false);
+    loadDashboardData();
+
+    const onFocus = () => loadDashboardData();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        loadDashboardData();
       }
-    }
-    load();
-  }, []);
+    };
+    const onOnline = () => loadDashboardData();
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", onOnline);
+
+    const intervalId = window.setInterval(() => {
+      loadDashboardData();
+    }, 15000);
+
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", onOnline);
+      window.clearInterval(intervalId);
+    };
+  }, [loadDashboardData]);
 
   const statCards = [
     { label: "Active Clients", value: stats?.active_clients ?? "—", icon: Users, color: "bg-blue-500", href: "/dashboard/clients" },
@@ -104,24 +143,24 @@ export default function DashboardPage() {
       {/* Revenue Summary */}
       {stats && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-          <div className="panel">
+          <Link href="/dashboard/billing?focus=all" className="panel hover:shadow-md transition-shadow">
             <p className="text-sm text-slate-500">Total Billed</p>
             <p className="text-2xl font-bold text-slate-800 mt-1">
               ${stats.total_billed.toLocaleString()}
             </p>
-          </div>
-          <div className="panel">
+          </Link>
+          <Link href="/dashboard/billing?focus=paid" className="panel hover:shadow-md transition-shadow">
             <p className="text-sm text-slate-500">Collected</p>
             <p className="text-2xl font-bold text-emerald-600 mt-1">
               ${stats.total_collected.toLocaleString()}
             </p>
-          </div>
-          <div className="panel">
+          </Link>
+          <Link href="/dashboard/billing?focus=outstanding" className="panel hover:shadow-md transition-shadow">
             <p className="text-sm text-slate-500">Outstanding</p>
             <p className="text-2xl font-bold text-amber-600 mt-1">
               ${stats.outstanding.toLocaleString()}
             </p>
-          </div>
+          </Link>
         </div>
       )}
 
@@ -169,8 +208,89 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Recent Activity */}
+        {/* Upcoming Appointments */}
         <div className="panel p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+              <Calendar className="h-5 w-5 text-indigo-500" />
+              Upcoming Appointments
+            </h2>
+            <Link href="/dashboard/calendar" className="text-sm text-blue-600 hover:text-blue-700">
+              View all
+            </Link>
+          </div>
+          {appointments.length === 0 && !loading ? (
+            <div className="text-center py-8 text-slate-400">
+              <Calendar className="h-10 w-10 mx-auto mb-2 opacity-50" />
+              <p>No upcoming appointments</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {appointments.map((ap) => {
+                const isSelected = selectedAppointment?.id === ap.id;
+                return (
+                  <button
+                    key={ap.id}
+                    onClick={() => setSelectedAppointment(ap)}
+                    className={`w-full text-left p-3 rounded-lg transition-colors border ${isSelected ? "bg-indigo-50 border-indigo-200" : "bg-slate-50 border-slate-100 hover:bg-slate-100"}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">{ap.title}</p>
+                        <p className="text-xs text-slate-500 mt-0.5 truncate">
+                          {new Date(ap.start_time).toLocaleDateString()} • {new Date(ap.start_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </div>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 shrink-0">
+                        {ap.status}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+
+              {selectedAppointment && (
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <p className="text-sm font-semibold text-slate-800 truncate">Quick Peek</p>
+                    <button onClick={() => setSelectedAppointment(null)} className="text-slate-400 hover:text-slate-600">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <p className="text-sm font-medium text-slate-800">{selectedAppointment.title}</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {new Date(selectedAppointment.start_time).toLocaleDateString()} • {new Date(selectedAppointment.start_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} - {new Date(selectedAppointment.end_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                  {selectedAppointment.client_name && (
+                    <p className="text-xs text-slate-600 mt-1">Client: {selectedAppointment.client_name}</p>
+                  )}
+                  {selectedAppointment.case_title && (
+                    <p className="text-xs text-slate-600">Case: {selectedAppointment.case_title}</p>
+                  )}
+                  {selectedAppointment.location && (
+                    <p className="text-xs text-slate-600 mt-1 flex items-center gap-1">
+                      <MapPin className="h-3 w-3" /> {selectedAppointment.location}
+                    </p>
+                  )}
+                  {selectedAppointment.notes && (
+                    <p className="text-xs text-slate-500 mt-2">{selectedAppointment.notes}</p>
+                  )}
+                  <div className="mt-3">
+                    <Link
+                      href={`/dashboard/calendar?tab=appointments&appointment_id=${selectedAppointment.id}`}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                    >
+                      Open in Calendar
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Recent Activity */}
+        <div className="panel p-6 lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
               <Clock className="h-5 w-5 text-blue-500" />
@@ -211,6 +331,7 @@ export default function DashboardPage() {
               { label: "New Case", href: "/dashboard/cases", icon: Briefcase, color: "text-emerald-600 bg-emerald-50" },
               { label: "Draft Document", href: "/dashboard/documents", icon: FileText, color: "text-violet-600 bg-violet-50" },
               { label: "AI Research", href: "/dashboard/research", icon: TrendingUp, color: "text-amber-600 bg-amber-50" },
+              { label: "Billing", href: "/dashboard/billing", icon: DollarSign, color: "text-rose-600 bg-rose-50" },
             ].map((action) => (
               <Link
                 key={action.label}

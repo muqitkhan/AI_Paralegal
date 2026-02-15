@@ -33,3 +33,4 @@ class Client(Base):
     user = relationship("User", back_populates="clients")
     cases = relationship("Case", back_populates="client", cascade="all, delete-orphan")
     invoices = relationship("Invoice", back_populates="client", cascade="all, delete-orphan")
+    appointments = relationship("Appointment", back_populates="client")

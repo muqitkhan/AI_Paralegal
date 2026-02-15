@@ -52,3 +52,4 @@ class Case(Base):
     documents = relationship("Document", back_populates="case", cascade="all, delete-orphan")
     deadlines = relationship("Deadline", back_populates="case", cascade="all, delete-orphan")
     time_entries = relationship("TimeEntry", back_populates="case", cascade="all, delete-orphan")
+    appointments = relationship("Appointment", back_populates="case")

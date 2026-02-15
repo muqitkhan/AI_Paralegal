@@ -10,7 +10,7 @@ from app.models.client import Client, ClientStatus
 from app.models.case import Case, CaseStatus
 from app.models.document import Document
 from app.models.billing import Invoice, InvoiceStatus, TimeEntry
-from app.models.calendar import Deadline, CalendarEvent
+from app.models.calendar import Deadline, Appointment, AppointmentStatus
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -156,3 +156,48 @@ async def get_recent_activity(
     # Sort by timestamp descending and return top 8
     activities.sort(key=lambda x: x["timestamp"], reverse=True)
     return activities[:8]
+
+
+@router.get("/appointments")
+async def get_upcoming_appointments(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    uid = current_user.id
+    now = datetime.utcnow()
+    window_start = now - timedelta(hours=12)
+
+    appointments = (
+        db.query(Appointment)
+        .filter(
+            Appointment.user_id == uid,
+            Appointment.start_time >= window_start,
+            Appointment.status.in_([AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED]),
+        )
+        .order_by(Appointment.start_time)
+        .limit(12)
+        .all()
+    )
+
+    upcoming = [ap for ap in appointments if ap.end_time >= now]
+    if len(upcoming) < 6:
+        fallback = [ap for ap in appointments if ap.end_time < now]
+        upcoming.extend(fallback)
+    upcoming = upcoming[:6]
+
+    return [
+        {
+            "id": ap.id,
+            "title": ap.title,
+            "start_time": ap.start_time.isoformat(),
+            "end_time": ap.end_time.isoformat(),
+            "status": ap.status.value,
+            "location": ap.location,
+            "notes": ap.notes,
+            "case_id": ap.case_id,
+            "case_title": ap.case.title if ap.case else None,
+            "client_id": ap.client_id,
+            "client_name": ap.client.name if ap.client else None,
+        }
+        for ap in upcoming
+    ]

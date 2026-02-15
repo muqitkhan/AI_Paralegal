@@ -15,7 +15,14 @@ from app.models.client import Client, ClientStatus
 from app.models.case import Case, CaseStatus, CaseType
 from app.models.document import Document, DocumentType, DocumentTemplate
 from app.models.billing import Invoice, InvoiceStatus, InvoiceItem, TimeEntry
-from app.models.calendar import CalendarEvent, EventType, Deadline, DeadlinePriority
+from app.models.calendar import (
+     CalendarEvent,
+     EventType,
+     Deadline,
+     DeadlinePriority,
+     Appointment,
+     AppointmentStatus,
+)
 from app.services.auth import hash_password
 
 # Create tables if missing
@@ -386,6 +393,82 @@ for dd in deadlines_data:
     dl = Deadline(id=uid(), user_id=USER, case_id=case_objs[ci].id, **dd)
     db.add(dl)
 
+# ──────────── 10. appointments ────────────
+appointments_data = [
+     dict(
+          case=0,
+          client=0,
+          title="TechCorp PI Hearing Prep Call",
+          start_time=d(1).replace(hour=9, minute=30),
+          end_time=d(1).replace(hour=10, minute=0),
+          status=AppointmentStatus.CONFIRMED,
+          location="Zoom",
+          notes="Finalize hearing outline and witness sequence.",
+          reminder_minutes=30,
+          auto_follow_up=True,
+     ),
+     dict(
+          case=1,
+          client=1,
+          title="Whitfield Property Site Walkthrough",
+          start_time=d(2).replace(hour=13, minute=0),
+          end_time=d(2).replace(hour=14, minute=0),
+          status=AppointmentStatus.SCHEDULED,
+          location="42 Lakeshore Ave, Oakland",
+          notes="Take photos and verify easement obstruction points.",
+          reminder_minutes=45,
+          auto_follow_up=True,
+     ),
+     dict(
+          case=3,
+          client=3,
+          title="Santos Immigration Check-in",
+          start_time=d(4).replace(hour=11, minute=0),
+          end_time=d(4).replace(hour=11, minute=30),
+          status=AppointmentStatus.SCHEDULED,
+          location="Phone",
+          notes="Review USCIS biometrics prep checklist.",
+          reminder_minutes=60,
+          auto_follow_up=True,
+     ),
+     dict(
+          case=4,
+          client=4,
+          title="BARG Compliance Debrief",
+          start_time=d(6).replace(hour=15, minute=0),
+          end_time=d(6).replace(hour=16, minute=0),
+          status=AppointmentStatus.CONFIRMED,
+          location="Office – Conference Room B",
+          notes="Discuss investigator questions and payroll gap remediation.",
+          reminder_minutes=30,
+          auto_follow_up=True,
+     ),
+     dict(
+          case=6,
+          client=7,
+          title="Nimbus Contract Redline Review",
+          start_time=d(8).replace(hour=10, minute=0),
+          end_time=d(8).replace(hour=11, minute=0),
+          status=AppointmentStatus.SCHEDULED,
+          location="Zoom",
+          notes="Walk through indemnity and liability cap revisions.",
+          reminder_minutes=30,
+          auto_follow_up=True,
+     ),
+]
+
+for ad in appointments_data:
+     case_idx = ad.pop("case")
+     client_idx = ad.pop("client")
+     appt = Appointment(
+          id=uid(),
+          user_id=USER,
+          case_id=case_objs[case_idx].id,
+          client_id=client_objs[client_idx].id,
+          **ad,
+     )
+     db.add(appt)
+
 # ──────────── commit ────────────
 db.commit()
 db.close()
@@ -394,4 +477,4 @@ print("✅  Demo data seeded successfully!")
 print(f"   User:  demo@lawfirm.com / demo1234")
 print(f"   {len(clients_data)} clients, {len(cases_data)} cases, {len(docs_data)} documents")
 print(f"   {len(templates)} templates, {len(inv_data)} invoices, {len(time_data)} time entries")
-print(f"   {len(events_data)} events, {len(deadlines_data)} deadlines")
+print(f"   {len(events_data)} events, {len(deadlines_data)} deadlines, {len(appointments_data)} appointments")
